@@ -1,7 +1,6 @@
 #!/usr/bin/env python3.8
 
-# Last edit: Becky Hanscam, 7/19/20
-# python3.8 gvp_cas_frozencore.py input_file > output_file.log
+# python3.8 
 
 # get starting time
 import time
