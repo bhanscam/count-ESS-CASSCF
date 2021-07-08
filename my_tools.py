@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 import numpy as np
+from scipy.special import comb
+import itertools
 from functools import reduce
 from distutils.util import strtobool
 from pyscf import gto, scf, ao2mo, tools, symm, fci, mcscf
@@ -241,3 +243,61 @@ def vis_orbs_molden( U, filename, molecule, basis ):
 		molden.orbital_coeff( mol, f, np.dot( U, mol_hf.mo_coeff ), ene=mol_hf.mo_energy, occ=mol_hf.mo_occ )
 
 	return None
+
+#_______________________________
+# String functions
+#_______________________________
+
+"""Function that compares strings for reverse colexical ordering
+input: two strings (arrays)
+output: True or False
+"""
+def colexical(I,J):
+	diff = [J.index(j) for j in J if j not in I]
+	if J[diff[-1]] > I[diff[-1]]:
+		sort = True
+	else:
+		sort = False
+	return sort
+
+"""Function that sorts array in reverse colexical ordering using a bubble sort algorithm
+input: array of strings in any order
+output: array of strings in reverse colexical order
+"""
+def colexicalSort(arr):
+	sort = False
+	while sort == False:
+		swaps = 0
+		for j in range(len(arr)-1):     # traverse through all array elements
+			# Swap if the element found non-colexical with the next element
+			if colexical(arr[j],arr[j+1]) == False:
+				swaps += 1
+				arr[j], arr[j+1] = arr[j+1], arr[j]
+		if swaps == 0:
+			sort = True
+	return arr
+
+'''strings: array of all possible strings sorted in reverse colexical ordering
+'''
+def strings( nelec, norb ):
+
+	nelec_a = int(nelec/2.)
+	combos = itertools.combinations(range(0,norb), nelec_a)
+	strings = []
+	for word in combos:
+		split = [char for char in word]
+		strings.append(split)
+	colexicalSort(strings)
+
+	return strings
+
+'''Tracks ci index back to the associated alpha/beta strings
+input: index in C_vec (nstr**2)
+output: alpha string, beta string
+'''
+def ci2strings( nstr, nelec, norb, ind_vec ):
+	ind_mat = np.unravel_index(ind_vec,(nstr,nstr))
+	a_str = strings( nelec, norb )[ind_mat[0]]
+	b_str = strings( nelec, norb )[ind_mat[1]]
+
+	return a_str, b_str
