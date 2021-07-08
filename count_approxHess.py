@@ -1,6 +1,7 @@
 #!/usr/bin/env python3.8
 
-# python3.8 
+# Last edit: Becky Hanscam, 7/19/20
+# python3.8 gvp_cas_frozencore.py input_file > output_file.log
 
 # get starting time
 import time
@@ -310,7 +311,7 @@ def dE_X_C( varXflat, varC, give_d2E_info=False ):
 	var_dE_dC = ( 2. * ( hc - ( (np.dot(varC.T,hc) / var_wfn_norm) * varC ) ) ) / var_wfn_norm
 
 	if give_d2E_info == True:
-		return var_energy, var_dE_dX, var_dE_dC, var_h2e, var_rdm1, var_MOtot_oints, var_MOtot_tints, E_act
+		return var_energy, var_dE_dX, var_dE_dC, var_h2e, var_rdm1, var_MOtot_oints, var_MOtot_tints, var_MO_oints_act, var_MO_tints_act, E_act
 	else:
 		return var_dE_dX, var_dE_dC
 
@@ -348,7 +349,7 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 		for j in range(norb_tot):
 			if Xupper_ones[i,j] != 0: Xindices.append((i,j))
 
-	Energy, dE_dX, dE_dC, h2e, rdm1, MO_oints_tot, MO_tints_tot, Eact = dE_X_C( Xflat, C, True )	# TAG1
+	Energy, dE_dX, dE_dC, h2e, rdm1, MO_oints_tot, MO_tints_tot, MO_oints_act, MO_tints_act, Eact = dE_X_C( Xflat, C, True )	# TAG1
 
 	# reshape arrays for easier handling	
 	dE_dX_flat = np.ndarray.flatten(dE_dX)
@@ -363,7 +364,7 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 	if user_inputs['bfgs_Hess'] == True:
 		# Get diagonal element of Hamiltonian
 		# TODO replace with specific Hamiltonian terms that are less $$$
-		def ham_diagonal( var_h2e, j ):
+		def ham_diagonal_slow( var_h2e, j ):
 		
 			jI = np.eye(nstr**2,k=j)[0,:]
 			Hc = contract_2e( var_h2e, np.reshape(jI,(nstr,nstr)), norb_act, nelec_act )
@@ -371,6 +372,44 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			Hdiag = np.dot( jI, Hc )
 		
 			return Hdiag
+
+		def ham_diagonal_fast( oints, tints, ci_ind ):
+
+			Hdiag = 0
+			Ia_occ, Ib_occ = ci2strings( nstr, nelec_act, norb_act, ci_ind )
+			Ia_virt = [a for a in range(norb_act) if a not in Ia_occ]
+			Ib_virt = [a for a in range(norb_act) if a not in Ib_occ]
+			
+			# contributions from alpha orbitals
+			for ia in Ia_occ:
+				Hdiag += oints[ia,ia]
+				for ra in range(norb_act):
+					Hdiag -= 0.5 * tints[ia,ra,ra,ia]
+				for ja in Ia_occ:
+					Hdiag += 0.5 * tints[ia,ia,ja,ja]
+				for aa in Ia_virt:
+					Hdiag += 0.5 * tints[ia,aa,aa,ia]
+				for jb in Ib_occ:
+					Hdiag += 0.5 * tints[ia,ia,jb,jb]
+			# contributions from beta orbitals
+			for ib in Ib_occ:
+				Hdiag += oints[ib,ib]
+				for rb in range(norb_act):
+					Hdiag -= 0.5 * tints[ib,rb,rb,ib]
+				for jb in Ib_occ:
+					Hdiag += 0.5 * tints[ib,ib,jb,jb]
+				for ab in Ib_virt:
+					Hdiag += 0.5 * tints[ib,ab,ab,ib]
+				for ja in Ia_occ:
+					Hdiag += 0.5 * tints[ib,ib,ja,ja]
+
+			return Hdiag
+
+		## For debugging ham_diagonal
+		#for i in range(nstr**2):
+		#	print (i, ham_diagonal_slow( h2e, i ))
+		#	print (i, ham_diagonal_fast( MO_oints_act, MO_tints_act, i ))
+		#	print ()
 
 		# TODO move outside objf and add wrapper func for norb_cut_start, norb_occ, tints?
 		# Effective 1-eri
@@ -387,8 +426,8 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 		#	Hess_ci_{ii} | _{k} = 2 * ( Hdiag_{ii} - E_{k} )
 		Hess_E_ci = np.zeros((nstr**2))
 		for i in range(nstr**2):
-			#Hess_E_ci[i] = 2 * ( (ham_diagonal( h2e, i ) / np.sum(np.square( C ))) - Energy )
-			Hess_E_ci[i] = 2 * ( (ham_diagonal( h2e, i ) / np.sum(np.square( C ))) - Eact )
+			#Hess_E_ci[i] = 2 * ( (ham_diagonal_slow( h2e, i ) / np.sum(np.square( C ))) - Energy )
+			Hess_E_ci[i] = 2 * ( (ham_diagonal_fast( MO_oints_act, MO_tints_act, i ) / np.sum(np.square( C ))) - Eact )
 	
 		# Orbital energy hessian, approximate as diagonal and with Fock
 		# 	Hess_orb = (1/2) * (1+Pijkl) * <psi| [Eij, [Ekl, F]] |psi> 
@@ -713,6 +752,11 @@ e,c,xflat,xtot = objf(Vcurrent)
 print ("final E = %4.12f"%(e+energy_nuc))
 print ("\nfinal C = \n",np.reshape(c,[nstr,nstr]))
 print ("\nfinal Xflat = \n",xflat)
+
+# Create file to analyze ci vector
+print ('\nCi vector MO orbital configurations:')
+for i in range(nstr**2):
+	print ('occupied orbitals (alpha,beta): ',ci2strings(nstr,nelec_act,norb_act,i),' coeff = ', c[i])
 
 # write optimized data to files with output directory
 np.savetxt(user_inputs['output_dir']+'/C.txt',c)				# formatted as checkpoint file for restarting calc if necessary
