@@ -363,99 +363,60 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 
 	if user_inputs['bfgs_Hess'] == True:
 		# Get diagonal element of Hamiltonian
-		# TODO replace with specific Hamiltonian terms that are less $$$
-		def ham_diagonal_slow( var_h2e, j ):
-		
-			jI = np.eye(nstr**2,k=j)[0,:]
-			Hc = contract_2e( var_h2e, np.reshape(jI,(nstr,nstr)), norb_act, nelec_act )
-			Hc = np.reshape(Hc,(-1))
-			Hdiag = np.dot( jI, Hc )
-		
-			return Hdiag
+		#ham_diagonal = lambda h2e, j: prep_ham_diagonal_slow( nstr, nelec_act, norb_act, h2e, j )
+		ham_diagonal = lambda ci_ind: prep_ham_diagonal_fast( nstr, nelec_act, norb_act, MO_oints_act, MO_tints_act, ci_ind )
 
-		def ham_diagonal_fast( oints, tints, ci_ind ):
-
-			Hdiag = 0
-			Ia_occ, Ib_occ = ci2strings( nstr, nelec_act, norb_act, ci_ind )
-			Ia_virt = [a for a in range(norb_act) if a not in Ia_occ]
-			Ib_virt = [a for a in range(norb_act) if a not in Ib_occ]
-			
-			# contributions from alpha orbitals
-			for ia in Ia_occ:
-				Hdiag += oints[ia,ia]
-				for ra in range(norb_act):
-					Hdiag -= 0.5 * tints[ia,ra,ra,ia]
-				for ja in Ia_occ:
-					Hdiag += 0.5 * tints[ia,ia,ja,ja]
-				for aa in Ia_virt:
-					Hdiag += 0.5 * tints[ia,aa,aa,ia]
-				for jb in Ib_occ:
-					Hdiag += 0.5 * tints[ia,ia,jb,jb]
-			# contributions from beta orbitals
-			for ib in Ib_occ:
-				Hdiag += oints[ib,ib]
-				for rb in range(norb_act):
-					Hdiag -= 0.5 * tints[ib,rb,rb,ib]
-				for jb in Ib_occ:
-					Hdiag += 0.5 * tints[ib,ib,jb,jb]
-				for ab in Ib_virt:
-					Hdiag += 0.5 * tints[ib,ab,ab,ib]
-				for ja in Ia_occ:
-					Hdiag += 0.5 * tints[ib,ib,ja,ja]
-
-			return Hdiag
 
 		## For debugging ham_diagonal
 		#for i in range(nstr**2):
 		#	print (i, ham_diagonal_slow( h2e, i ))
-		#	print (i, ham_diagonal_fast( MO_oints_act, MO_tints_act, i ))
+		#	print (i, ham_diagonal( i ))
 		#	print ()
+
+		#exit()
 
 		# TODO move outside objf and add wrapper func for norb_cut_start, norb_occ, tints?
 		# Effective 1-eri
 		#	g_pq = h_pq + sum_{r}^{Nspacial} ( 2*(pq|rr) - (pr|rq) )
 		#	Nspacial (noCore,frozenCore) = active
 		#	Nspacial (closedCore) = occupied
-		def eff_oint(i,j):
-			oint_MF = HF_oints_tf[i,j]
-			for p in range(norb_cut_start,norb_occ):
-				oint_MF += ( 2.0 * MO_tints_tot[i,j,p,p] ) - ( 1.0 * MO_tints_tot[i,p,p,j] ) 
-			return oint_MF
+		eff_oint = lambda i,j: prep_eff_oint( i, j, MO_oints_tot, MO_tints_tot, norb_cut_start, norb_occ )
 	
 		# CI energy hessian, approximate using davidson CI
 		#	Hess_ci_{ii} | _{k} = 2 * ( Hdiag_{ii} - E_{k} )
 		Hess_E_ci = np.zeros((nstr**2))
 		for i in range(nstr**2):
-			#Hess_E_ci[i] = 2 * ( (ham_diagonal_slow( h2e, i ) / np.sum(np.square( C ))) - Energy )
-			Hess_E_ci[i] = 2 * ( (ham_diagonal_fast( MO_oints_act, MO_tints_act, i ) / np.sum(np.square( C ))) - Eact )
+			Hess_E_ci[i] = 2 * ( (ham_diagonal( i ) / np.sum(np.square( C ))) - Eact )
 	
 		# Orbital energy hessian, approximate as diagonal and with Fock
 		# 	Hess_orb = (1/2) * (1+Pijkl) * <psi| [Eij, [Ekl, F]] |psi> 
 		# ...approximate as diagonal, where ij is a compound index
 		# 	Hess_orb_{ij,ij} = (1/2) * (1 + P_{ij,ij}) * <psi| [Eij, [Eij, F]] |psi> 
 		# 			 = <psi| [Eij, [Eij, F]] |psi> 
-		Hess_E_orb = np.zeros((Xlen))
+		Hess_E_orb = build_Hess_E_orb( Xlen, Xindices, coreList, actvList, virtList, eff_oint, rdm1, norb_cut_start )
+
+		#Hess_E_orb = np.zeros((Xlen))
 	
-		for indHess in range(Xlen):
-			i = Xindices[indHess][0]
-			j = Xindices[indHess][1]
+		#for indHess in range(Xlen):
+		#	i = Xindices[indHess][0]
+		#	j = Xindices[indHess][1]
 	
-			# i=core, j=active (closedCore only)
-			if i in coreList and j in actvList:
-				Hess_E_orb[indHess] +=  2.0 * eff_oint(i,i) * rdm1[j-norb_cut_start,j-norb_cut_start]
-				Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-				Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-				for w in actvList:
-					Hess_E_orb[indHess] += -2.0 * eff_oint(j,w) * rdm1[j-norb_cut_start,w-norb_cut_start]
-			# i=core, j=virtual (closedCore only)
-			if i in coreList and j in virtList:
-				Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-				Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-			# i=active, j=virtual (all core types)
-			if i in actvList and j in virtList:
-				Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-				for w in actvList:
-					Hess_E_orb[indHess] += -2.0 * eff_oint(i,w) * rdm1[i-norb_cut_start,w-norb_cut_start]
+		#	# i=core, j=active (closedCore only)
+		#	if i in coreList and j in actvList:
+		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(i,i) * rdm1[j-norb_cut_start,j-norb_cut_start]
+		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
+		#		Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
+		#		for w in actvList:
+		#			Hess_E_orb[indHess] += -2.0 * eff_oint(j,w) * rdm1[j-norb_cut_start,w-norb_cut_start]
+		#	# i=core, j=virtual (closedCore only)
+		#	if i in coreList and j in virtList:
+		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
+		#		Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
+		#	# i=active, j=virtual (all core types)
+		#	if i in actvList and j in virtList:
+		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
+		#		for w in actvList:
+		#			Hess_E_orb[indHess] += -2.0 * eff_oint(i,w) * rdm1[i-norb_cut_start,w-norb_cut_start]
 	
 		hess_E_flat = np.concatenate([Hess_E_orb,Hess_E_ci], 0)
 
