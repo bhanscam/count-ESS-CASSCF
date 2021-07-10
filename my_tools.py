@@ -32,8 +32,10 @@ def get_user_input(filename='count.inp'):
 		'target_spin'	: 0,
 		'omega'		: -100,
 		'lambda'	: 1e-6,
+		'hess_shift'	: 0.2,
 		'Xrelax'	: True,
-		'bfgs_Hess'	: False,
+		'Xrelax_bfgs_hess'	: False,
+		'bfgs_hess'	: False,
 		'bfgs_thresh_initial'	: 1e-4,
 		'bfgs_thresh_final'	: 1e-6,
 		'bfgs_print'	: -1,
@@ -78,8 +80,10 @@ def get_user_input(filename='count.inp'):
 	d['target_spin'] = int(d['target_spin'])
 	d['omega'] = float(d['omega'])
 	d['lambda'] = float(d['lambda'])
+	d['hess_shift'] = float(d['hess_shift'])
 	d['Xrelax'] = strtobool(d['Xrelax'])
-	d['bfgs_Hess'] = strtobool(d['bfgs_Hess'])
+	d['Xrelax_bfgs_hess'] = strtobool(d['Xrelax_bfgs_hess'])
+	d['bfgs_hess'] = strtobool(d['bfgs_hess'])
 	d['bfgs_thresh_initial'] = float(d['bfgs_thresh_initial'])
 	d['bfgs_thresh_final'] = float(d['bfgs_thresh_final'])
 	d['bfgs_print'] = int(d['bfgs_print'])
