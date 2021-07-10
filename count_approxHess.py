@@ -361,21 +361,11 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 	dE_dC_norm = np.linalg.norm( dE_dC )
 	dE_dX_norm = np.linalg.norm( dE_dX )
 
-	if user_inputs['bfgs_Hess'] == True:
+	if user_inputs['bfgs_hess'] == True:
 		# Get diagonal element of Hamiltonian
 		#ham_diagonal = lambda h2e, j: prep_ham_diagonal_slow( nstr, nelec_act, norb_act, h2e, j )
 		ham_diagonal = lambda ci_ind: prep_ham_diagonal_fast( nstr, nelec_act, norb_act, MO_oints_act, MO_tints_act, ci_ind )
 
-
-		## For debugging ham_diagonal
-		#for i in range(nstr**2):
-		#	print (i, ham_diagonal_slow( h2e, i ))
-		#	print (i, ham_diagonal( i ))
-		#	print ()
-
-		#exit()
-
-		# TODO move outside objf and add wrapper func for norb_cut_start, norb_occ, tints?
 		# Effective 1-eri
 		#	g_pq = h_pq + sum_{r}^{Nspacial} ( 2*(pq|rr) - (pr|rq) )
 		#	Nspacial (noCore,frozenCore) = active
@@ -389,34 +379,7 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			Hess_E_ci[i] = 2 * ( (ham_diagonal( i ) / np.sum(np.square( C ))) - Eact )
 	
 		# Orbital energy hessian, approximate as diagonal and with Fock
-		# 	Hess_orb = (1/2) * (1+Pijkl) * <psi| [Eij, [Ekl, F]] |psi> 
-		# ...approximate as diagonal, where ij is a compound index
-		# 	Hess_orb_{ij,ij} = (1/2) * (1 + P_{ij,ij}) * <psi| [Eij, [Eij, F]] |psi> 
-		# 			 = <psi| [Eij, [Eij, F]] |psi> 
 		Hess_E_orb = build_Hess_E_orb( Xlen, Xindices, coreList, actvList, virtList, eff_oint, rdm1, norb_cut_start )
-
-		#Hess_E_orb = np.zeros((Xlen))
-	
-		#for indHess in range(Xlen):
-		#	i = Xindices[indHess][0]
-		#	j = Xindices[indHess][1]
-	
-		#	# i=core, j=active (closedCore only)
-		#	if i in coreList and j in actvList:
-		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(i,i) * rdm1[j-norb_cut_start,j-norb_cut_start]
-		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		#		Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		#		for w in actvList:
-		#			Hess_E_orb[indHess] += -2.0 * eff_oint(j,w) * rdm1[j-norb_cut_start,w-norb_cut_start]
-		#	# i=core, j=virtual (closedCore only)
-		#	if i in coreList and j in virtList:
-		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		#		Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		#	# i=active, j=virtual (all core types)
-		#	if i in actvList and j in virtList:
-		#		Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		#		for w in actvList:
-		#			Hess_E_orb[indHess] += -2.0 * eff_oint(i,w) * rdm1[i-norb_cut_start,w-norb_cut_start]
 	
 		hess_E_flat = np.concatenate([Hess_E_orb,Hess_E_ci], 0)
 
@@ -457,13 +420,21 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 		dLag_dC = np.zeros((nstr**2))
 		dLag_dX = -2. * (omega - Energy) * dE_dX_flat
 		
-		if user_inputs['bfgs_Hess'] == True:
+		if user_inputs['Xrelax_bfgs_hess'] == True:
 			# Build approximate Lagrangian Hessian
 			d2Lag_dC = np.ones((nstr**2))
 			d2Lag_dX = -2. * ( ((omega - Energy) * Hess_E_orb) - dX_gradE_normsq )	#TODO remove mu, not necessary here
-			#if min(abs(d2Lag_dX)) < 0.5:
-			#	shift = 0.5 - min(d2Lag_dX)
+
+			## positive constant shift away from zero
+			#if min(abs(d2Lag_dX)) < user_inputs['hess_shift']:
+			#	shift = user_inputs['hess_shift'] - min(abs(d2Lag_dX))
 			#	d2Lag_dX += shift
+
+			# signed constant shift away from zero
+			if min(abs(d2Lag_dX)) < user_inputs['hess_shift']:
+				shift = user_inputs['hess_shift'] - min(abs(d2Lag_dX))
+				for i in range(len(d2Lag_dX)):
+					d2Lag_dX[i] += np.sign(d2Lag_dX[i]) * shift
 
 			# Pack hess of ObjFunc into vector
 			d2C = np.reshape(d2Lag_dC, [d2Lag_dC.size])
@@ -486,7 +457,7 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 		dLag_dX = (chi * ( (-2. * mu * ( omega - Energy ) * dE_dX_flat) + ((1.-mu) * (dX_gradE_normsq)) )) + ( (1.-chi) * dE_dX_flat )
 		dLag_dC = (chi * ( (-2. * mu * ( omega - Energy ) * dE_dC_flat)      + ((1.-mu) * (dC_gradE_normsq)) )) + ( (1.-chi) * dE_dC )
 	
-		if user_inputs['bfgs_Hess'] == True:
+		if user_inputs['bfgs_hess'] == True:
 			# Build approximate Lagrangian Hessian
 			d2Lag_dX = (chi * ( ( -2. * mu * ( ((omega - Energy) * Hess_E_orb) - dX_gradE_normsq ) ) + ( (1. - mu) * 2. * Hess_E_orb**2. ))) + ( (1. - chi) * Hess_E_orb )
 			d2Lag_dC = (chi * ( ( -2. * mu * ( ((omega - Energy) * Hess_E_ci ) - dC_gradE_normsq ) ) + ( (1. - mu) * 2. * Hess_E_ci**2.  ))) + ( (1. - chi) * Hess_E_ci )	
@@ -496,9 +467,16 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			d2X = np.reshape(d2Lag_dX, [d2Lag_dX.size])
 			hess_lag_flat = np.concatenate([d2X,d2C], 0)
 
-			if min(abs(hess_lag_flat)) < 0.5:
-				shift = 0.5 - min(hess_lag_flat)
-				hess_lag_flat += shift
+			## positive constant shift away from zero
+			#if min(abs(hess_lag_flat)) < 0.5:
+			#	shift = 0.5 - min(abs(hess_lag_flat))
+			#	hess_lag_flat += shift
+
+			# signed constant shift away from zero
+			if min(abs(hess_lag_flat)) < user_inputs['hess_shift']:
+				shift = user_inputs['hess_shift'] - min(abs(hess_lag_flat))
+				for i in range(len(hess_lag_flat)):
+					hess_lag_flat[i] += np.sign(hess_lag_flat[i]) * shift
 
 			# function that performs H^-1.vec for input vector
 			hess_lag_inv = lambda vec: vec / hess_lag_flat
@@ -521,10 +499,9 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 
 	# print iteration info and update counter
 	micro_counter += 1
-	#print("chi,mu: %2d, %1.2f   E = %10.12f    |dE| = %10.12f    |dE_dC| = %10.12f    |dE_dX| = %10.12f" %(chi, mu, Energy+energy_nuc, gradE_norm, dE_dC_norm, dE_dX_norm))
 	print("chi,mu: %2d, %1.2f   func call = %4d    E = %10.12f    |dE_dC| = %10.12f    |dE_dX| = %10.12f    L = %10.12f    |dL| = %10.12f" %(chi, mu, micro_counter, Energy+energy_nuc, dE_dC_norm, dE_dX_norm, Lag, np.linalg.norm(grad_flat)))
 
-	if user_inputs['bfgs_Hess'] == True:
+	if user_inputs['bfgs_hess'] == True or user_inputs['Xrelax_bfgs_hess'] == True:
 		#return Lag, grad_flat, hess_lag_flat, gradE_flat, hess_E_flat, Energy, Eact#, dE_dV_normsq, dV_gradE_normsq	#TODO debugging only
 		return Lag, grad_flat, hess_lag_inv
 	else:
@@ -557,7 +534,6 @@ var_giveVariables = True
 e,c,xflat,xtot = objf(V0)
 Emacros.append([macro_counter,e+energy_nuc])
 print ("initial E = %4.12f " %(e+energy_nuc))
-#print ("initial E no nuc = %4.12f " %(e))
 print ("\ninitial C = \n",np.reshape(c,[nstr,nstr]))
 print ("\ninitial X = \n",xflat)
 
@@ -595,14 +571,15 @@ if user_inputs['Xrelax'] == True:
 	mu_Xrelax  = 0.0
 	chi_Xrelax = 1.0
 	var_giveVariables = False
-	user_inputs['bfgs_Hess'] = False
 	print ("\nRelaxing X with CI coefficients frozen...")
-	print( "\n\nXrelax_ITER:%4d   Tolerance: %.4g  " %(macro_counter, thresh_initial))
-	if user_inputs['bfgs_Hess'] == False:
+	print ( "\n\nXrelax_ITER:%4d   Tolerance: %.4g  " %(macro_counter, thresh_initial))
+	if user_inputs['Xrelax_bfgs_hess'] == False:
+		print ("Using scipy's l-bfgs-b optimizer with no hessian information.")
 		optResult = myEngine( V0, mu_Xrelax, chi_Xrelax, thresh_final, approxHess=False)
 		tol = np.sum( np.square( optResult.jac ) )
 		V_Xrelax = np.reshape(optResult.x,V0.shape)
 	else:
+		print ("Using local l-bfgs optimizer that uses the hessian information.")
 		optResult,tol = myEngine( V0, mu_Xrelax, chi_Xrelax, thresh_initial, step_control_version=step_control_gridsearch, approxHess=True )
 		#optResult,tol = myEngine( V0, mu_Xrelax, chi_Xrelax, thresh_initial, step_control_version=backtrack_linesearch, approxHess=True )
 		V_Xrelax = np.reshape(optResult,V0.shape)
@@ -619,7 +596,6 @@ else:
 	Vcurrent = V0
 
 # Reset optimization inputs and parameters
-user_inputs['bfgs_Hess'] = True
 var_giveVariables = False
 max_macro = user_inputs['macro_maxiters']
 micro_counter = 0	# counts iterations within a BFGS call
@@ -638,11 +614,13 @@ while macro_counter < 6:
 	macro_counter += 1
 	print( "\n\nMACRO_ITER:%4d    Mu:%2.2f     Chi:%2.2f   Threshold: %.4g" %(macro_counter, mu, chi, thresh))
 	var_giveVariables = False
-	if user_inputs['bfgs_Hess'] == False:
+	if user_inputs['bfgs_hess'] == False:
+		print ("Using scipy's l-bfgs-b optimizer with no hessian information.")
 		optResult = myEngine( Vcurrent, mu, chi, thresh )
 		Vcurrent = np.reshape(optResult.x,V0.shape)
 		tol = np.sum( np.square( optResult.jac ) )
 	else:
+		print ("Using local l-bfgs optimizer that uses the hessian information.")
 		optResult,tol = myEngine( Vcurrent, mu, chi, thresh, step_control_version=backtrack_linesearch, approxHess=True )
 		Vcurrent = np.reshape(optResult,V0.shape)
 	print( "\nAfter macro_iter:%4d    Mu:%2.2f     Chi:%2.2f   Error: %12.12f  \n" %(macro_counter, mu, chi, tol))
@@ -668,11 +646,13 @@ while macro_counter < max_macro:
 	macro_counter += 1
 	print( "\n\nMACRO_ITER:%4d    Mu:%2.2f     Chi:%2.2f   Threshold: %.4g  " %(macro_counter, mu, chi, thresh))
 	var_giveVariables = False
-	if user_inputs['bfgs_Hess'] == False:
+	if user_inputs['bfgs_hess'] == False:
+		print ("Using scipy's l-bfgs-b optimizer with no hessian information.")
 		optResult = myEngine( Vcurrent, mu, chi, thresh )
 		Vcurrent = np.reshape(optResult.x,V0.shape)
 		tol = np.sum( np.square( optResult.jac ) )
 	else:
+		print ("Using local l-bfgs optimizer that uses the hessian information.")
 		optResult,tol = myEngine( Vcurrent, mu, chi, thresh, step_control_version=backtrack_linesearch, approxHess=True )
 		Vcurrent = np.reshape(optResult,V0.shape)
 	print( "\nAfter macro_iter:%4d    Mu:%2.2f     Chi:%2.2f   Error: %12.12f  \n" %(macro_counter, mu, chi, tol))
@@ -689,11 +669,13 @@ if user_inputs['chi0'] == True:
 		macro_counter += 1
 		print( "\n\nMACRO_ITER:%4d    Mu:%2.2f     Chi:%2.2f   Threshold: %.4g  " %(macro_counter, mu, chi, thresh))
 		var_giveVariables = False
-		if user_inputs['bfgs_Hess'] == False:
+		if user_inputs['bfgs_hess'] == False:
+			print ("Using scipy's l-bfgs-b optimizer with no hessian information.")
 			optResult = myEngine( Vcurrent, mu, chi, thresh )
 			Vcurrent = np.reshape(optResult.x,V0.shape)
 			tol = np.sum( np.square( optResult.jac ) )
 		else:
+			print ("Using local l-bfgs optimizer that uses the hessian information.")
 			optResult,tol = myEngine( Vcurrent, mu, chi, thresh, step_control_noCore, approxHess=True )
 			Vcurrent = np.reshape(optResult,V0.shape)
 		print( "\nAfter macro_iter:%4d    Mu:%2.2f     Chi:%2.2f   Error: %12.12f  \n" %(macro_counter, mu, chi, tol))
