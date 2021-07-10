@@ -425,16 +425,16 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			d2Lag_dC = np.ones((nstr**2))
 			d2Lag_dX = -2. * ( ((omega - Energy) * Hess_E_orb) - dX_gradE_normsq )	#TODO remove mu, not necessary here
 
-			## positive constant shift away from zero
-			#if min(abs(d2Lag_dX)) < user_inputs['hess_shift']:
-			#	shift = user_inputs['hess_shift'] - min(abs(d2Lag_dX))
-			#	d2Lag_dX += shift
-
-			# signed constant shift away from zero
+			# positive constant shift away from zero
 			if min(abs(d2Lag_dX)) < user_inputs['hess_shift']:
 				shift = user_inputs['hess_shift'] - min(abs(d2Lag_dX))
-				for i in range(len(d2Lag_dX)):
-					d2Lag_dX[i] += np.sign(d2Lag_dX[i]) * shift
+				d2Lag_dX += shift
+
+			## signed constant shift away from zero
+			#if min(abs(d2Lag_dX)) < user_inputs['hess_shift']:
+			#	shift = user_inputs['hess_shift'] - min(abs(d2Lag_dX))
+			#	for i in range(len(d2Lag_dX)):
+			#		d2Lag_dX[i] += np.sign(d2Lag_dX[i]) * shift
 
 			# Pack hess of ObjFunc into vector
 			d2C = np.reshape(d2Lag_dC, [d2Lag_dC.size])
@@ -467,16 +467,16 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			d2X = np.reshape(d2Lag_dX, [d2Lag_dX.size])
 			hess_lag_flat = np.concatenate([d2X,d2C], 0)
 
-			## positive constant shift away from zero
-			#if min(abs(hess_lag_flat)) < 0.5:
-			#	shift = 0.5 - min(abs(hess_lag_flat))
-			#	hess_lag_flat += shift
+			# positive constant shift away from zero
+			if min(abs(hess_lag_flat)) < 0.5:
+				shift = 0.5 - min(hess_lag_flat)
+				hess_lag_flat += shift
 
-			# signed constant shift away from zero
-			if min(abs(hess_lag_flat)) < user_inputs['hess_shift']:
-				shift = user_inputs['hess_shift'] - min(abs(hess_lag_flat))
-				for i in range(len(hess_lag_flat)):
-					hess_lag_flat[i] += np.sign(hess_lag_flat[i]) * shift
+			## signed constant shift away from zero
+			#if min(abs(hess_lag_flat)) < user_inputs['hess_shift']:
+			#	shift = user_inputs['hess_shift'] - min(abs(hess_lag_flat))
+			#	for i in range(len(hess_lag_flat)):
+			#		hess_lag_flat[i] += np.sign(hess_lag_flat[i]) * shift
 
 			# function that performs H^-1.vec for input vector
 			hess_lag_inv = lambda vec: vec / hess_lag_flat
@@ -501,7 +501,7 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 	micro_counter += 1
 	print("chi,mu: %2d, %1.2f   func call = %4d    E = %10.12f    |dE_dC| = %10.12f    |dE_dX| = %10.12f    L = %10.12f    |dL| = %10.12f" %(chi, mu, micro_counter, Energy+energy_nuc, dE_dC_norm, dE_dX_norm, Lag, np.linalg.norm(grad_flat)))
 
-	if user_inputs['bfgs_hess'] == True or user_inputs['Xrelax_bfgs_hess'] == True:
+	if (user_inputs['bfgs_hess'] == True) and (user_inputs['Xrelax_bfgs_hess'] == True):
 		#return Lag, grad_flat, hess_lag_flat, gradE_flat, hess_E_flat, Energy, Eact#, dE_dV_normsq, dV_gradE_normsq	#TODO debugging only
 		return Lag, grad_flat, hess_lag_inv
 	else:
@@ -597,6 +597,7 @@ else:
 
 # Reset optimization inputs and parameters
 var_giveVariables = False
+user_inputs['Xrelax_bfgs_hess'] = True
 max_macro = user_inputs['macro_maxiters']
 micro_counter = 0	# counts iterations within a BFGS call
 macro_counter = 0	# counts number of BFGS calls
