@@ -818,20 +818,21 @@ def step_control_gridsearch(val, grad, x, p, evaluation_function):
   #print (p_scaled) 
   return p_scaled
 
+# https://en.wikipedia.org/wiki/Wolfe_conditions
+def backtrack_linesearch(f0_val, g0_vec, x_vec, d_vec, evaluation_function, max_iter=50, debug_print=False, num_tol=1e-15):
 
-#def backtrack_linesearch(x_vec, d_vec, tar_func, grad_func, step_func, step_args, \
-def backtrack_linesearch(f0_val, g0_vec, x_vec, d_vec, evaluation_function, \
-    max_iter=50, debug_print=False, num_tol=1e-15):
-  alph = 0.5
-  gamma = 1
-  # constants
-  iter_ind = 0
+  alph = 0.5	# scaling of step length
+  gamma = 1	# step length
+  iter_ind = 0	# linesearch iteration counter
+
+  # wolfe condition scaling factors where (0<c1<c2<1)
+  # defined by Nocedal and Wright for quasi-Newton
   c1 = 1e-4
   c2 = 0.9
+
   # evaluate function, grad at initial point and do first step
-  #f0_val = tar_func(x_vec, *step_args)
-  #g0_vec = grad_func(x_vec, *step_args)
   g0_proj = g0_vec @ d_vec # projected gradient along the linesearch direction
+
   # print out some stuff
   spacing = " "*26
   if debug_print:
@@ -840,31 +841,36 @@ def backtrack_linesearch(f0_val, g0_vec, x_vec, d_vec, evaluation_function, \
     backtrack_iter_line = "{} | {:>12.4e} | {:>12.4e} | {:>12.4e} | {:>12.4e} | {:>12.4e}"
     print(backtrack_header)
     print(backtrack_iter_line.format(spacing, 0, f0_val, g0_proj, 0, 0))
+
   while iter_ind < max_iter:
     # make a temporary step and evaluate function and gradient
     s_vec = x_vec + gamma*d_vec
     f_val, g_vec, inv_hess_func = lbfgs_do_internal_evaluation(evaluation_function, s_vec, s_vec.shape)
     g_vec = np.reshape(g_vec,d_vec.shape)
     g_proj = g_vec @ d_vec
+
     # evaluate the wolfe conditions at the new position 
     wc1 = f_val - (f0_val + c1*gamma*g0_proj) # should be less than zero
     wc2 = c2*g0_proj - g_proj                 # should be less than zero 
     if debug_print:
       print(backtrack_iter_line.format(spacing, gamma, f_val, g_proj, wc1, wc2))
+
     # break if wolfe conditions are met (i.e. negative)
     if wc1 < num_tol and wc2 < num_tol:
       break
+
     # break if wolfe conditions are below numerical precision
     #if np.abs(wc1) < num_tol and np.abs(wc2) < num_tol:
     #  break
+
     # otherwise rescale the steplength by alph
     gamma = gamma*alph
     iter_ind = iter_ind + 1
+
   # rescale and make the step, calculate final values
+
   d_vec = gamma*d_vec
-  #x_vec = x_vec + d_vec
-  #f_val, g_vec, inv_hess_func = lbfgs_do_internal_evaluation(evaluation_function, x_vec, x_vec.shape)
-  #return x_vec, d_vec, f_val, g_vec, step_args, iter_ind
+
   return d_vec
 
 #}
