@@ -467,16 +467,19 @@ def prep_obj_func( Vflat, mu, chi, giveVariables ):
 			d2X = np.reshape(d2Lag_dX, [d2Lag_dX.size])
 			hess_lag_flat = np.concatenate([d2X,d2C], 0)
 
-			# positive constant shift away from zero
-			if min(abs(hess_lag_flat)) < 0.5:
-				shift = 0.5 - min(hess_lag_flat)
-				hess_lag_flat += shift
-
-			## signed constant shift away from zero
-			#if min(abs(hess_lag_flat)) < user_inputs['hess_shift']:
-			#	shift = user_inputs['hess_shift'] - min(abs(hess_lag_flat))
-			#	for i in range(len(hess_lag_flat)):
-			#		hess_lag_flat[i] += np.sign(hess_lag_flat[i]) * shift
+			# shift hessian values away from zero for numerical stability
+			if min(abs(hess_lag_flat)) < user_inputs['hess_shift']:
+				if mu > (user_inputs['hess_shift_signed_mu'] + 0.01):	# for large mu
+					# positive constant shift away from zero
+					print('shifting hessian by a positive constant: ',user_inputs['hess_shift'])
+					shift = user_inputs['hess_shift'] - min(hess_lag_flat)
+					hess_lag_flat += shift
+				else:	# for small mu	
+					# signed constant shift away from zero
+					print('shifting hessian by a signed constant: +/-',user_inputs['hess_shift'])
+					shift = user_inputs['hess_shift'] - min(abs(hess_lag_flat))
+					for i in range(len(hess_lag_flat)):
+						hess_lag_flat[i] += np.sign(hess_lag_flat[i]) * shift
 
 			# function that performs H^-1.vec for input vector
 			hess_lag_inv = lambda vec: vec / hess_lag_flat
@@ -622,6 +625,10 @@ while macro_counter < 6:
 		tol = np.sum( np.square( optResult.jac ) )
 	else:
 		print ("Using local l-bfgs optimizer that uses the hessian information.")
+		#if macro_counter < 2:
+		#	thresh_tmp = 1e-4
+		#else:
+		#	thresh_tmp = thresh
 		optResult,tol = myEngine( Vcurrent, mu, chi, thresh, step_control_version=backtrack_linesearch, approxHess=True )
 		Vcurrent = np.reshape(optResult,V0.shape)
 	print( "\nAfter macro_iter:%4d    Mu:%2.2f     Chi:%2.2f   Error: %12.12f  \n" %(macro_counter, mu, chi, tol))
