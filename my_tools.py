@@ -19,31 +19,32 @@ def permute( mat, perms ):
 # reads input file or uses default values
 def get_user_input(filename='count.inp'):
 	# default values
-	d = {	'geometry'	: None,
-		'Cguess'	: None,
-		'Xguess'	: None,
-		'eris'		: 'fcidump.txt',
-		'basis'		: None,
-		'core_type'	: 'noCore',
-		'nelec_active'	: None,
-		'norb_active'	: None,
-		'active_list'	: None,
-		'target_state'	: 1,
-		'target_spin'	: 0,
-		'omega'		: -100,
-		'lambda'	: 1e-6,
-		'hess_shift'	: 0.2,
-		'Xrelax'	: True,
+	d = {	'geometry'		: None,
+		'Cguess'		: None,
+		'Xguess'		: None,
+		'eris'			: 'fcidump.txt',
+		'basis'			: None,
+		'core_type'		: 'noCore',
+		'nelec_active'		: None,
+		'norb_active'		: None,
+		'active_list'		: None,
+		'target_state'		: 1,
+		'target_spin'		: 0,
+		'omega'			: -100,
+		'lambda'		: 1e-6,
+		'hess_shift'		: 0.5,
+		'hess_shift_signed_mu'	: -1,
+		'Xrelax'		: True,
 		'Xrelax_bfgs_hess'	: False,
-		'bfgs_hess'	: False,
+		'bfgs_hess'		: False,
 		'bfgs_thresh_initial'	: 1e-4,
 		'bfgs_thresh_final'	: 1e-6,
-		'bfgs_print'	: -1,
-		'macro_maxiters': 500,
-		'chi0'		: False,
-		'debug'		: False,
-		'molden'	: True,
-		'output_dir'	: None
+		'bfgs_print'		: -1,
+		'macro_maxiters'	: 500,
+		'chi0'			: False,
+		'debug'			: False,
+		'molden'		: True,
+		'output_dir'		: None
 		 }
 
 	with open(filename, 'r') as f:
@@ -81,6 +82,7 @@ def get_user_input(filename='count.inp'):
 	d['omega'] = float(d['omega'])
 	d['lambda'] = float(d['lambda'])
 	d['hess_shift'] = float(d['hess_shift'])
+	d['hess_shift_signed_mu'] = float(d['hess_shift_signed_mu'])
 	d['Xrelax'] = strtobool(d['Xrelax'])
 	d['Xrelax_bfgs_hess'] = strtobool(d['Xrelax_bfgs_hess'])
 	d['bfgs_hess'] = strtobool(d['bfgs_hess'])
