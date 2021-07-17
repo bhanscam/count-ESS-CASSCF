@@ -182,6 +182,85 @@ def my_pyscf( molecule, basis, nelec_act, norb_act, active_list=None ):
 	
 	return nelec_tot, norb_tot, energy_nuc_core, energy_nuc
 	
+def my_absorb_h1e(oints, tints, norb, nelec):
+	#f1e = oints
+	#for p in range(norb):
+	#	for q in range(norb):
+	#		for r in range(norb):
+	#			f1e[p,q] -= 0.5 * tints[p,r,r,q]
+	f1e = oints - np.einsum('jiik->jk',tints) * 0.5
+	f1e = f1e * (1./(nelec+1e-100))
+	for k in range(norb):
+		tints[k,k,:,:] += f1e
+		tints[:,:,k,k] += f1e
+	return tints * 0.5
+
+def natural_orbitals( rdm1 ):
+	## reformat  molecule geometry for pyscf
+	#molecule_list = []
+	#for atom in molecule:
+	#	atom_list = []
+	#	atom_list.append(str(atom[0]))
+	#	atom_list.append([atom[1],atom[2],atom[3]])
+	#	molecule_list.append(atom_list)
+	## build molecule in pyscf
+	#mol = gto.Mole()
+	#mol.atom = molecule_list
+	#mol.basis = basis
+	#mol.build()
+	## run RHF
+	#mol_hf = scf.RHF(mol)
+	#mol_hf.kernel()
+	#mocoeff = np.dot( mol_hf.mo_coeff, U )
+	#mc = mcscf.CASSCF( mol_hf, norb_act, nelec_act, ncore=norb_core, frozen=norb_core)
+	#nat_orbs = mcscf.casci.cas_natorb( mol_hf, mocoeff, sort=True, casdm1=rdm1, with_meta_lowdin=True )
+
+	nat_orbs = np.eig( rdm1 )
+
+	sort = np.argsort(nat_orbs.round(9), kind='mergesort')
+	nat_orbs = nat_orbs[sort]
+	
+	return nat_orbs
+
+
+def vis_orbs_molden( U, filename, molecule, basis, norb_core, norb_occ, eigvecs_cas=None, natorbs=None ):
+	# reformat  molecule geometry for pyscf
+	molecule_list = []
+	for atom in molecule:
+		atom_list = []
+		atom_list.append(str(atom[0]))
+		atom_list.append([atom[1],atom[2],atom[3]])
+		molecule_list.append(atom_list)
+
+	# build molecule in pyscf
+	mol = gto.Mole()
+	mol.atom = molecule_list
+	mol.basis = basis
+	mol.build()
+
+	# run RHF
+	mol_hf = scf.RHF(mol)
+	mol_hf.kernel()
+
+	mo_coeff = np.dot( U, mol_hf.mo_coeff )
+
+	# create molden file
+	#with open( filename+'.molden', 'w' ) as f:
+	#	molden.header( mol, f )
+	#	molden.orbital_coeff( mol, f, mo_coeff, ene=mol_hf.mo_energy, occ=mol_hf.mo_occ )
+
+	if natorbs.any() != None:
+		no_occ = np.zeros(mo_coeff.shape[1])
+		no_occ[:norb_core] = 2
+		no_occ[norb_core:norb_occ] = natorbs
+		no_mocoeff = np.copy( mo_coeff )
+		no_mocoeff[:,norb_core:norb_occ] = np.dot( mo_coeff[:,norb_core:norb_occ], eigvecs_cas )
+		with open( filename+'_natorbs.molden', 'w' ) as f:
+			molden.header( mol, f )
+			molden.orbital_coeff( mol, f, no_mocoeff, ene=mol_hf.mo_energy, occ=no_occ )
+
+	return None
+
 # account for frozen core in remaining oints
 # add frozen core components of tints to oints
 def oints_2MFcore(oints, tints, norb_core, norb_occ):
@@ -211,45 +290,6 @@ def rdm12_act2occ(rdm1_act, rdm2_act, norb_core, norb_occ):
 		
 	return rdm1_occ, rdm2_occ
 
-def my_absorb_h1e(oints, tints, norb, nelec):
-	#f1e = oints
-	#for p in range(norb):
-	#	for q in range(norb):
-	#		for r in range(norb):
-	#			f1e[p,q] -= 0.5 * tints[p,r,r,q]
-	f1e = oints - np.einsum('jiik->jk',tints) * 0.5
-	f1e = f1e * (1./(nelec+1e-100))
-	for k in range(norb):
-		tints[k,k,:,:] += f1e
-		tints[:,:,k,k] += f1e
-	return tints * 0.5
-
-def vis_orbs_molden( U, filename, molecule, basis ):
-	# reformat  molecule geometry for pyscf
-	molecule_list = []
-	for atom in molecule:
-		atom_list = []
-		atom_list.append(str(atom[0]))
-		atom_list.append([atom[1],atom[2],atom[3]])
-		molecule_list.append(atom_list)
-
-	# build molecule in pyscf
-	mol = gto.Mole()
-	mol.atom = molecule_list
-	mol.basis = basis
-	mol.build()
-
-	# run RHF
-	mol_hf = scf.RHF(mol)
-	mol_hf.kernel()
-
-	# create molden file
-	with open( filename, 'w' ) as f:
-		molden.header( mol, f )
-		molden.orbital_coeff( mol, f, np.dot( U, mol_hf.mo_coeff ), ene=mol_hf.mo_energy, occ=mol_hf.mo_occ )
-
-	return None
-
 #_______________________________
 # Approximate Hessian functions
 #_______________________________
@@ -262,81 +302,6 @@ def prep_ham_diagonal_slow( nstr, nelec_act, norb_act, var_h2e, j ):
 	Hdiag = np.dot( jI, Hc )
 
 	return Hdiag
-
-def prep_ham_diagonal_fast( nstr, nelec_act, norb_act, oints, tints, ci_ind ):
-
-	Hdiag = 0
-	Ia_occ, Ib_occ = ci2strings( nstr, nelec_act, norb_act, ci_ind )
-	Ia_virt = [a for a in range(norb_act) if a not in Ia_occ]
-	Ib_virt = [a for a in range(norb_act) if a not in Ib_occ]
-	
-	# contributions from alpha orbitals
-	for ia in Ia_occ:
-		Hdiag += oints[ia,ia]
-		for ra in range(norb_act):
-			Hdiag -= 0.5 * tints[ia,ra,ra,ia]
-		for ja in Ia_occ:
-			Hdiag += 0.5 * tints[ia,ia,ja,ja]
-		for aa in Ia_virt:
-			Hdiag += 0.5 * tints[ia,aa,aa,ia]
-		for jb in Ib_occ:
-			Hdiag += 0.5 * tints[ia,ia,jb,jb]
-	# contributions from beta orbitals
-	for ib in Ib_occ:
-		Hdiag += oints[ib,ib]
-		for rb in range(norb_act):
-			Hdiag -= 0.5 * tints[ib,rb,rb,ib]
-		for jb in Ib_occ:
-			Hdiag += 0.5 * tints[ib,ib,jb,jb]
-		for ab in Ib_virt:
-			Hdiag += 0.5 * tints[ib,ab,ab,ib]
-		for ja in Ia_occ:
-			Hdiag += 0.5 * tints[ib,ib,ja,ja]
-
-	return Hdiag
-
-
-# Effective 1-eri
-#	g_pq = h_pq + sum_{r}^{Nspacial} ( 2*(pq|rr) - (pr|rq) )
-#	Nspacial (noCore,frozenCore) = active
-#	Nspacial (closedCore) = occupied
-def prep_eff_oint( i, j, MO_oints_tot, MO_tints_tot, norb_cut_start, norb_occ ):
-	oint_MF = MO_oints_tot[i,j]
-	for p in range(norb_cut_start,norb_occ):
-		oint_MF += ( 2.0 * MO_tints_tot[i,j,p,p] ) - ( 1.0 * MO_tints_tot[i,p,p,j] ) 
-	return oint_MF
-
-# Orbital energy hessian, approximate as diagonal and with Fock operator
-# 	Hess_orb = (1/2) * (1+Pijkl) * <psi| [Eij, [Ekl, F]] |psi> 
-# ...approximate as diagonal, where ij is a compound index
-# 	Hess_orb_{ij,ij} = (1/2) * (1 + P_{ij,ij}) * <psi| [Eij, [Eij, F]] |psi> 
-# 			 = <psi| [Eij, [Eij, F]] |psi> 
-def build_Hess_E_orb( Xlen, Xindices, coreList, actvList, virtList, eff_oint, rdm1, norb_cut_start):
-
-	Hess_E_orb = np.zeros((Xlen))
-	for indHess in range(Xlen):
-		i = Xindices[indHess][0]
-		j = Xindices[indHess][1]
-	
-		# i=core, j=active (closedCore only)
-		if i in coreList and j in actvList:
-			Hess_E_orb[indHess] +=  2.0 * eff_oint(i,i) * rdm1[j-norb_cut_start,j-norb_cut_start]
-			Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-			Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-			for w in actvList:
-				Hess_E_orb[indHess] += -2.0 * eff_oint(j,w) * rdm1[j-norb_cut_start,w-norb_cut_start]
-		# i=core, j=virtual (closedCore only)
-		if i in coreList and j in virtList:
-			Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-			Hess_E_orb[indHess] += -2.0 * eff_oint(i,i) * rdm1[i-norb_cut_start,i-norb_cut_start]
-		# i=active, j=virtual (all core types)
-		if i in actvList and j in virtList:
-			Hess_E_orb[indHess] +=  2.0 * eff_oint(j,j) * rdm1[i-norb_cut_start,i-norb_cut_start]
-			for w in actvList:
-				Hess_E_orb[indHess] += -2.0 * eff_oint(i,w) * rdm1[i-norb_cut_start,w-norb_cut_start]
-
-	return Hess_E_orb
-
 
 #_______________________________
 # String functions
