@@ -572,7 +572,7 @@ def lbfgs(evaluation_function,
   for ii in range(max_iter):
 
     ## print a greeting
-    print("L-BFGS:  starting iteration %4i\n" % ii)
+    print("\nL-BFGS:  starting iteration %4i" % ii)
 
     # compute the search direction ( p = - h * g0 )
     #print ('COMPUTING SEARCH DIRECTION...')
