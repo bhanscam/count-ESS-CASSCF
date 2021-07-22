@@ -655,7 +655,7 @@ while macro_counter < 6:
 	if np.around(thresh,8) > thresh_final: thresh *= 1e-1
 	else: thresh = thresh_final
 	if tol <= 1e-11: 
-		print ("terminated mu>0 due to tolerance: ",tol)
+		print ("\nterminated mu>0 due to tolerance: ",tol)
 		break
 	
 
@@ -663,9 +663,6 @@ while macro_counter < 6:
 thresh = thresh_final
 while macro_counter < max_macro:
 	#if tol <= thresh_final: 
-	if tol <= 1e-11: 
-		print ("terminated chi=1 due to tolerance: ",tol)
-		break
 	mu = 0.0
 	macro_counter += 1
 	print( "\n\nMACRO_ITER:%4d    Mu:%2.2f     Chi:%2.2f   Threshold: %.4g  " %(macro_counter, mu, chi, thresh))
@@ -688,6 +685,9 @@ while macro_counter < max_macro:
 	Emacros.append([macro_counter,e_temp+energy_nuc])
 	np.savetxt(user_inputs['output_dir']+'/C_macroiter_'+str(macro_counter)+'.txt',c_temp)				# formatted as checkpoint file for restarting calc if necessary
 	np.savetxt(user_inputs['output_dir']+'/Xflat_macroiter_'+str(macro_counter)+'.txt',Xav_temp)	# checkpoint file for restarting calc if necessary
+	if tol <= 1e-11: 
+		print ("\nterminated mu=0 due to tolerance: ",tol)
+		break
 
 # chi = 0, mu = 0
 if user_inputs['chi0'] == True:
@@ -717,7 +717,7 @@ if user_inputs['chi0'] == True:
 		np.savetxt(user_inputs['output_dir']+'/Xflat_macroiter_'+str(macro_counter)+'.txt',Xav_temp)	# checkpoint file for restarting calc if necessary
 		#if tol <= thresh_final: 
 		if tol <= 1e-12: 
-			print ("terminated chi=0 due to tolerance: ",tol)
+			print ("\nterminated chi=0 due to tolerance: ",tol)
 			break
 
 # print and save final energy, CI vector, X matrix (act-virt block)
@@ -732,7 +732,7 @@ print ("final Xflat = \n",xflat)
 # Create file to analyze ci vector
 print ('\nCi vector MO orbital configurations:')
 for i in range(nstr**2):
-	if c[i] > 1e-3:
+	if c[i] > 5e-2:
 		print ('occupied orbitals (alpha,beta): ',ci2strings(nstr,nelec_act,norb_act,i),' coeff = ', c[i])
 
 # write optimized data to files with output directory
@@ -744,17 +744,6 @@ np.savetxt(user_inputs['output_dir']+'/Cguess.txt',Cguess)
 np.savetxt(user_inputs['output_dir']+'/Eplot.txt',Emacros)
 #os.rename('count.inp',user_inputs['output_dir']+'/count.inp')
 #os.rename('fcidump.txt',user_inputs['output_dir']+'/fcidump.txt')
-
-# print debugging values
-if user_inputs['debug'] == True:
-	print ("\n|myC - pyscfC| =")
-	print (np.linalg.norm(abs(np.reshape(c,[nstr,nstr]))-abs(np.reshape(np.loadtxt("Cpyscf.txt"),[nstr,nstr]))))
-	print ("\n         myE: ", e+energy_nuc)
-	print ("myE - pyscfE: ",e+energy_nuc - np.loadtxt("Epyscf.txt"))
-	print ('\npyscfE = ',np.loadtxt("Epyscf.txt"))
-	os.rename('Epyscf.txt',user_inputs['output_dir']+'/Epyscf.txt')
-	os.rename('Cpyscf.txt',user_inputs['output_dir']+'/Cpyscf.txt')
-	#os.rename(user_inputs['Cguess'], user_inputs['output_dir']+'/Cguess.txt')
 
 # Create molden files for orbital visualization
 if user_inputs['molden'] == True:
